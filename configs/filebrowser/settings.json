@@ -1,0 +1,22 @@
+{
+  "port": 8080,
+  "baseURL": "",
+  "address": "0.0.0.0",
+  "log": "stdout",
+  "database": "/database/filebrowser.db",
+  "root": "/srv",
+  "auth": {
+    "method": "json",
+    "header": ""
+  },
+  "branding": {
+    "name": "NAS Files",
+    "disableExternal": false,
+    "disableUsedPercentage": false,
+    "files": "",
+    "theme": "dark"
+  },
+  "commands": [],
+  "shell": "",
+  "rules": []
+}

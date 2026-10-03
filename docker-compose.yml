@@ -1,0 +1,301 @@
+# =============================================================================
+#  Raspberry Pi 4B NAS — Docker Compose Stack
+#  Gehärtet nach dem Vorbild des LLM-Stacks (ollama-zugriff)
+# =============================================================================
+#
+#  Alle Services teilen sich das Docker-Netzwerk "nas-network".
+#  Daten liegen auf /mnt/data (USB-HDD/SSD).
+#  Web-UIs binden auf 127.0.0.1 (nur lokal + Tunnel erreichbar).
+#  Samba läuft NATIV auf dem Host (setup/06), nicht in diesem Stack.
+#
+#  Starten:  docker compose up -d
+#  Stoppen:  docker compose down
+#  Logs:     docker compose logs -f <service>
+# =============================================================================
+
+networks:
+  nas-network:
+    name: nas-network
+    driver: bridge
+
+# =============================================================================
+# VOLUMES — Alle auf der USB-Platte (/mnt/data/docker-volumes/)
+# =============================================================================
+volumes:
+  filebrowser-db:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_ROOT}/docker-volumes/filebrowser
+
+  # Nextcloud AIO verlangt GENAU diesen Volume-Namen (nicht ändern!)
+  nextcloud_aio_mastercontainer:
+    name: nextcloud_aio_mastercontainer
+
+  vaultwarden-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_ROOT}/docker-volumes/vaultwarden
+
+  jellyfin-config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_ROOT}/docker-volumes/jellyfin/config
+
+  jellyfin-cache:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_ROOT}/docker-volumes/jellyfin/cache
+
+  homepage-config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_ROOT}/docker-volumes/homepage
+
+  uptime-kuma-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_ROOT}/docker-volumes/uptime-kuma
+
+services:
+  # ===========================================================================
+  #  1. CLOUDFLARED — Tunnel Connector (ein Connector, viele Subdomains)
+  # ===========================================================================
+  cloudflared:
+    image: cloudflare/cloudflared:${CLOUDFLARED_VERSION:-2026.9.3}
+    container_name: cloudflared
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    networks:
+      - nas-network
+    restart: unless-stopped
+    # --- Härtung ---
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=10M
+
+  # ===========================================================================
+  #  2. SAMBA → läuft NATIV auf dem Host (setup/06-samba-host.sh)
+  # ===========================================================================
+  #  Grund: Speicherlimits pro Nutzer über ext4-Kernel-Quotas brauchen echte
+  #  Linux-UIDs. Nutzerverwaltung: scripts/nas-user.sh
+  # ===========================================================================
+
+  # ===========================================================================
+  #  3. FILEBROWSER — Web-Dateimanager (NUR ADMIN)
+  # ===========================================================================
+  #  Filebrowser kennt keine Speicherlimits und schreibt als eigener User.
+  #  Für normale Nutzer → Nextcloud. Filebrowser nur für dich als Admin,
+  #  extern unbedingt hinter Cloudflare Access (siehe setup/05).
+  # ===========================================================================
+  filebrowser:
+    image: filebrowser/filebrowser:${FILEBROWSER_VERSION:-v2.31.2}
+    container_name: filebrowser
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ${DATA_ROOT}/shares:/srv
+      - filebrowser-db:/database
+      - ./configs/filebrowser/settings.json:/.filebrowser.json:ro
+    networks:
+      - nas-network
+    restart: unless-stopped
+    # --- Härtung ---
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    read_only: true
+    tmpfs:
+      - /tmp:size=50M
+
+  # ===========================================================================
+  #  4. NEXTCLOUD AIO — Cloud-Speicher mit Nutzer- und Quota-Verwaltung
+  # ===========================================================================
+  #  Der Master-Container startet die eigentlichen Nextcloud-Container
+  #  (nextcloud-aio-apache, -nextcloud, -database, ...) selbst und braucht
+  #  dafür den Docker-Socket. Container- und Volume-Name sind von AIO
+  #  fest vorgegeben und dürfen nicht geändert werden.
+  #  Admin-Oberfläche (Ersteinrichtung): per SSH-Tunnel
+  #    ssh -L 8180:127.0.0.1:8180 root@<pi-ip>  →  https://localhost:8180
+  # ===========================================================================
+  nextcloud-aio-mastercontainer:
+    image: ghcr.io/nextcloud-releases/all-in-one:${NEXTCLOUD_AIO_VERSION:-latest}
+    container_name: nextcloud-aio-mastercontainer
+    init: true
+    ports:
+      - "127.0.0.1:8180:8080"   # AIO-Admin-Oberfläche
+    environment:
+      - APACHE_PORT=11000
+      - APACHE_IP_BINDING=127.0.0.1
+      # Apache-Container zusätzlich ins nas-network → cloudflared erreicht
+      # ihn als http://nextcloud-aio-apache:11000
+      - APACHE_ADDITIONAL_NETWORK=nas-network
+      - NEXTCLOUD_DATADIR=${DATA_ROOT}/docker-volumes/nextcloud-data
+      - SKIP_DOMAIN_VALIDATION=true
+      - NEXTCLOUD_UPLOAD_LIMIT=16G
+      - NEXTCLOUD_MEMORY_LIMIT=512M
+    volumes:
+      - nextcloud_aio_mastercontainer:/mnt/docker-aio-config
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - nas-network
+    restart: unless-stopped
+    # Härtung bewusst minimal: AIO verwaltet Container über den Docker-Socket,
+    # zusätzliche Einschränkungen brechen Updates und Backups von AIO.
+    pids_limit: 512
+
+  # ===========================================================================
+  #  5. VAULTWARDEN — Passwort-Manager (Bitwarden-kompatibel)
+  # ===========================================================================
+  vaultwarden:
+    image: vaultwarden/server:${VAULTWARDEN_VERSION:-1.32.7}
+    container_name: vaultwarden
+    ports:
+      - "127.0.0.1:8280:80"
+    environment:
+      - DOMAIN=https://vault.nas-clemens.de
+      - SIGNUPS_ALLOWED=${VAULTWARDEN_SIGNUPS:-false}
+      - ADMIN_TOKEN=${VAULTWARDEN_ADMIN_TOKEN}
+      - LOG_LEVEL=warn
+      - ROCKET_LIMITS={json=10485760}
+      - TZ=${TZ:-Europe/Berlin}
+    volumes:
+      - vaultwarden-data:/data
+    networks:
+      - nas-network
+    restart: unless-stopped
+    # --- Härtung ---
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    read_only: true
+    tmpfs:
+      - /tmp:size=20M
+
+  # ===========================================================================
+  #  6. JELLYFIN — Medienserver (Filme, Musik, Fotos)
+  # ===========================================================================
+  jellyfin:
+    image: jellyfin/jellyfin:${JELLYFIN_VERSION:-10.10.6}
+    container_name: jellyfin
+    ports:
+      - "127.0.0.1:8096:8096"
+    environment:
+      - TZ=${TZ:-Europe/Berlin}
+    volumes:
+      - jellyfin-config:/config
+      - jellyfin-cache:/cache
+      - ${DATA_ROOT}/shares/media:/media:ro
+    networks:
+      - nas-network
+    restart: unless-stopped
+    # Hardware-Transcoding (Pi 4B V4L2):
+    devices:
+      - /dev/video10:/dev/video10
+      - /dev/video11:/dev/video11
+      - /dev/video12:/dev/video12
+    # --- Härtung ---
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+
+  # ===========================================================================
+  #  7. HOMEPAGE — Dashboard für alle Services
+  # ===========================================================================
+  homepage:
+    image: ghcr.io/gethomepage/homepage:${HOMEPAGE_VERSION:-v1.2.0}
+    container_name: homepage
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - homepage-config:/app/config
+      - ./configs/homepage/services.yaml:/app/config/services.yaml:ro
+      - ./configs/homepage/settings.yaml:/app/config/settings.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - nas-network
+    restart: unless-stopped
+    # --- Härtung ---
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    read_only: true
+    tmpfs:
+      - /tmp:size=20M
+
+  # ===========================================================================
+  #  8. UPTIME KUMA — Monitoring & Alerts
+  # ===========================================================================
+  uptime-kuma:
+    image: louislam/uptime-kuma:${UPTIME_KUMA_VERSION:-1.23.15}
+    container_name: uptime-kuma
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - uptime-kuma-data:/app/data
+    networks:
+      - nas-network
+    restart: unless-stopped
+    # --- Härtung ---
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+
+  # ===========================================================================
+  #  9. WATCHTOWER — Automatische Container-Updates (optional)
+  # ===========================================================================
+  watchtower:
+    image: containrrr/watchtower:${WATCHTOWER_VERSION:-1.7.1}
+    container_name: watchtower
+    environment:
+      - TZ=${TZ:-Europe/Berlin}
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_SCHEDULE=0 0 4 * * *   # täglich um 04:00
+      - WATCHTOWER_NOTIFICATIONS=shoutrrr
+      - WATCHTOWER_NOTIFICATION_URL=${WATCHTOWER_NOTIFY_URL:-}
+      # Nur bestimmte Container updaten (nicht alles blind):
+      - WATCHTOWER_LABEL_ENABLE=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - nas-network
+    restart: unless-stopped
+    # --- Härtung ---
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    read_only: true
+    tmpfs:
+      - /tmp:size=10M

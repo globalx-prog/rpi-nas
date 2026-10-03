@@ -1,0 +1,41 @@
+# Homepage Dashboard — Services
+# Docs: https://gethomepage.dev/configs/services/
+
+- NAS Dienste:
+    - Filebrowser:
+        href: https://files.nas-clemens.de
+        description: Web-Dateimanager
+        icon: filebrowser
+        server: my-docker
+        container: filebrowser
+    - Nextcloud:
+        href: https://cloud.nas-clemens.de
+        description: Cloud-Speicher, Kalender, Kontakte
+        icon: nextcloud
+        server: my-docker
+        container: nextcloud-aio-mastercontainer
+    - Jellyfin:
+        href: https://media.nas-clemens.de
+        description: Medienserver
+        icon: jellyfin
+        server: my-docker
+        container: jellyfin
+
+- Sicherheit:
+    - Vaultwarden:
+        href: https://vault.nas-clemens.de
+        description: Passwort-Manager
+        icon: vaultwarden
+        server: my-docker
+        container: vaultwarden
+
+- System:
+    - Uptime Kuma:
+        href: https://status.nas-clemens.de
+        description: Monitoring & Alerts
+        icon: uptime-kuma
+        server: my-docker
+        container: uptime-kuma
+    - Samba:
+        description: "SMB im LAN: \\\\<pi-ip>\\<benutzername>"
+        icon: samba
