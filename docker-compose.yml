@@ -213,11 +213,10 @@ services:
     networks:
       - nas-network
     restart: unless-stopped
-    # Hardware-Transcoding (Pi 4B V4L2):
-    devices:
-      - /dev/video10:/dev/video10
-      - /dev/video11:/dev/video11
-      - /dev/video12:/dev/video12
+    # Hardware-Transcoding: Pi 5 nutzt Software-Transcoding oder /dev/dri
+    # (Pi 4 V4L2 Geräte /dev/video10-12 existieren auf Pi 5 nicht)
+    # devices:
+    #   - /dev/dri:/dev/dri
     # --- Härtung ---
     cap_drop:
       - ALL
@@ -275,10 +274,11 @@ services:
   #  9. WATCHTOWER — Automatische Container-Updates (optional)
   # ===========================================================================
   watchtower:
-    image: containrrr/watchtower:${WATCHTOWER_VERSION:-1.7.1}
+    image: containrrr/watchtower:${WATCHTOWER_VERSION:-latest}
     container_name: watchtower
     environment:
       - TZ=${TZ:-Europe/Berlin}
+      - DOCKER_API_VERSION=1.44
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_SCHEDULE=0 0 4 * * *   # täglich um 04:00
       - WATCHTOWER_NOTIFICATIONS=shoutrrr
