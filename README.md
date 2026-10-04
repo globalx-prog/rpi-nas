@@ -171,6 +171,7 @@ NAS/
 │   └── 06-samba-host.sh               # Samba nativ + Gruppen + Freigaben
 └── docs/
     ├── nas-handbuch.md                # Vollständiges Handbuch & Bedienungsanleitung
+    ├── sicherheit-und-audit.md        # Sicherheits-Audit & Hardening Report
     ├── nutzerverwaltung.md            # Nutzer, Quotas, Freigaben
     ├── nvme-ssd-guide.md              # M.2 NVMe SSD am Pi 5 (PCIe, Boot, Tuning)
     ├── performance-tuning.md          # SMB-Tuning, I/O-Scheduler, etc.
