@@ -232,8 +232,6 @@ services:
     container_name: homepage
     ports:
       - "127.0.0.1:3000:3000"
-    environment:
-      - HOMEPAGE_ALLOWED_HOSTS=home.nas-clemens.de,localhost:3000,127.0.0.1:3000
     volumes:
       - homepage-config:/app/config
       - ./configs/homepage/services.yaml:/app/config/services.yaml:ro
@@ -266,10 +264,11 @@ services:
       - nas-network
     restart: unless-stopped
     # --- Härtung ---
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
+    # Uptime Kuma nutzt intern 'setpriv' für User- und Gruppen-Management:
+    # cap_drop:
+    #   - ALL
+    # security_opt:
+    #   - no-new-privileges:true
     pids_limit: 256
 
   # ===========================================================================
