@@ -1,6 +1,6 @@
-# Raspberry Pi 4B NAS — Gehärteter Docker-Stack mit Cloudflare Tunnel
+# Raspberry Pi 5 NAS — Gehärteter Docker-Stack mit Cloudflare Tunnel
 
-> **Ziel:** Maximale Dateifreigabe-Performance auf einem Pi 4B (4 GB RAM, USB 3.0 HDD/SSD),
+> **Ziel:** Maximale Dateifreigabe-Performance auf einem Pi 5 (USB 3.0 HDD/SSD oder PCIe NVMe),
 > alle Dienste als Docker-Container, extern erreichbar über Subdomains von `nas-clemens.de`.
 >
 > Basiert auf dem Härtungskonzept aus [`../LLM/ollama-zugriff/`](file:///home/clemi/Projekte/LLM/ollama-zugriff/README.md).
@@ -170,6 +170,7 @@ NAS/
 │   ├── 05-cloudflare-subdomains.sh    # Anleitung: Subdomains + Access
 │   └── 06-samba-host.sh               # Samba nativ + Gruppen + Freigaben
 └── docs/
+    ├── nas-handbuch.md                # Vollständiges Handbuch & Bedienungsanleitung
     ├── nutzerverwaltung.md            # Nutzer, Quotas, Freigaben
     ├── nvme-ssd-guide.md              # M.2 NVMe SSD am Pi 5 (PCIe, Boot, Tuning)
     ├── performance-tuning.md          # SMB-Tuning, I/O-Scheduler, etc.
